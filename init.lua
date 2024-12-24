@@ -115,18 +115,17 @@ function git_files_window()
     local editor_width = vim.api.nvim_get_option_value('columns', {})
     local editor_height = vim.api.nvim_get_option_value('lines', {})
 
+    -- title window
+    local title_starting_column = (editor_width - title_window_width) / 2
+    local title_starting_row = (editor_height - search_window_height - list_window_height - 7) / 2
 
     -- search window
     local search_starting_column = (editor_width - search_window_width) / 2
-    local search_starting_row = (editor_height - search_window_height - list_window_height - 7) / 2
-
-    -- title window
-    local title_starting_column = (editor_width - title_window_width) / 2
-    local title_starting_row = search_starting_row + 5
+    local search_starting_row = title_starting_row + 2
 
     -- list window
     local list_starting_column = (editor_width - list_window_width) / 2
-    local list_starting_row = title_starting_row + 3
+    local list_starting_row = search_starting_row + 3
 
     -- open title window
     local title_winid = vim.api.nvim_open_win(title_buffer_id, true, {
