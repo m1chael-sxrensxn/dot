@@ -175,16 +175,68 @@ function git_files_window()
             end
         end
     })
+    local selected_file_index = 0
 
     -- Close the search window when hitting escape
     vim.api.nvim_buf_set_keymap(git_files_search_buffer_id, 'n', '<Esc>', ':x <CR>', {noremap = false, silent = true})
+    -- When enter is hit on the search bar
+    local exit_menu_and_open_file_callback = function ()
+            -- Close file menu
+            if vim.api.nvim_win_is_valid(search_winid) then
+                vim.api.nvim_win_close(search_winid, true)
+            end
+            if vim.api.nvim_win_is_valid(title_winid) then
+                vim.api.nvim_win_close(title_winid, true)
+            end
+            if vim.api.nvim_win_is_valid(list_winid) then
+                vim.api.nvim_win_close(list_winid, true)
+            end
+
+            -- Return to command mode from menu
+            vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes('<Esc>', true, false, true), 'n', false)
+            -- Open the selected file
+            local selected_file_name = file_list[selected_file_index + 1]
+            vim.cmd("edit " .. vim.fn.fnameescape(selected_file_name))
+    end
+
+    -- 2 key mappings for enter on the search bar
+    vim.api.nvim_buf_set_keymap(git_files_search_buffer_id, 'n', '<CR>', '',
+        {noremap = false, silent = true,
+        callback = exit_menu_and_open_file_callback,
+    })
+    vim.api.nvim_buf_set_keymap(git_files_search_buffer_id, 'i', '<CR>', '',
+        {noremap = false, silent = true,
+        callback = exit_menu_and_open_file_callback,
+    })
+
+    -- Move up and down the selection list
+    vim.api.nvim_buf_set_keymap(git_files_search_buffer_id, 'n', 'j', '', {
+        noremap = false, silent = true,
+        callback = function ()
+            if selected_file_index < #file_list - 1 then
+                vim.api.nvim_buf_clear_namespace(git_files_list_buffer_id, 0, selected_file_index, selected_file_index + 1)
+                selected_file_index = selected_file_index + 1
+                vim.api.nvim_buf_add_highlight(git_files_list_buffer_id, 0, "LineNr", selected_file_index, 0, -1)
+            end
+        end
+    })
+    vim.api.nvim_buf_set_keymap(git_files_search_buffer_id, 'n', 'k', '', {
+        noremap = false, silent = true,
+        callback = function ()
+            if selected_file_index > 0 then
+                vim.api.nvim_buf_clear_namespace(git_files_list_buffer_id, 0, selected_file_index, selected_file_index + 1)
+                selected_file_index = selected_file_index - 1
+                vim.api.nvim_buf_add_highlight(git_files_list_buffer_id, 0, "LineNr", selected_file_index, 0, -1)
+            end
+        end
+    })
 
     -- Enter insert mode in the search window
     vim.api.nvim_command('startinsert')
 
     -- Highlight the first line of the list buffer
     vim.api.nvim_set_hl(0, "VisualHighlight", { fg = "#ffffff", bg = "#000000" })
-    vim.api.nvim_buf_add_highlight(git_files_list_buffer_id, 0, "LineNr", 0, 0, -1)
+    vim.api.nvim_buf_add_highlight(git_files_list_buffer_id, 0, "LineNr", selected_file_index, 0, -1)
 
 end
 
