@@ -235,7 +235,8 @@ function git_files_window()
     vim.api.nvim_command('startinsert')
 
     -- Highlight the first line of the list buffer
-    vim.api.nvim_set_hl(0, "VisualHighlight", { fg = "#ffffff", bg = "#000000" })
+    -- TODO: I don't think this is the correct theming API
+    -- vim.api.nvim_set_hl(0, "VisualHighlight", { fg = "#ffffff", bg = "#000000" })
     vim.api.nvim_buf_add_highlight(git_files_list_buffer_id, 0, "LineNr", selected_file_index, 0, -1)
 
 end
