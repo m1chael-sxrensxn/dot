@@ -176,79 +176,80 @@ function git_files_window()
         end
     })
     local selected_file_index = 0
+    local display_ranks = {}
 
     vim.api.nvim_create_autocmd({ 'TextChangedI' }, {
         buffer = git_files_search_buffer_id,
         callback = function(args)
             local line = vim.api.nvim_get_current_line()
-            local cursor_pos = vim.api.nvim_win_get_cursor(0)
-            local current_char = line:sub(cursor_pos[2], cursor_pos[2]) -- Get the last inserted character
-            print("Current line: " .. line .. " | Last inserted character: " .. current_char)
+            -- local cursor_pos = vim.api.nvim_win_get_cursor(0)
+            -- local current_char = line:sub(cursor_pos[2], cursor_pos[2]) -- Get the last inserted character
+            -- print("Current line: " .. line .. " | Last inserted character: " .. current_char)
 
             local file_path_ranks = {}
 
-            print("searching... " .. line)
-            for index, file_path in ipairs(file_list) do
-                -- print(index, file_path)
-                -- local data = { index: index, file_path: file_path, prompt: line, score: 0 }
+            -- When there is a search term provided
+            if #line > 0 then
+                -- Score every file path on the full search term everytime the search term changes
+                -- TODO: this search could be improved to be incremental with the current_char
+                for index, file_path in ipairs(file_list) do
+                    local match_position = 1
+                    -- Score the file path by using the search term to sequence through the indices ensuring the characters are present in order
+                    for i = 1, #line do
+                        local searched_character = line:sub(i, i)
+                        local found_position = string.find(string.lower(file_path), string.lower(searched_character), match_position)
 
-                -- Go through the search prompt
-                print("filepath: " .. file_path)
-                local match_position = 1
-                for i = 1, #line do
-                    local searched_character = line:sub(i, i)
-                    local found_position = string.find(file_path, searched_character, match_position)
-                    print(searched_character, found_position)
-
-                    -- Complete the score when the match becomes invalid
-                    if found_position == nil then
-                        local file_rank = { index = index, file_path = file_path, match_index = found_position }
-                        table.insert(file_path_ranks, file_rank)
-                        break
-                    end
-
-                    match_position = found_position + 1
-
-                    -- Complete the score when search sequence length is reached
-                    if i == #line then
-                        if found_position ~= nil then
+                        -- Complete the score when the match becomes invalid
+                        if found_position == nil then
                             local file_rank = { index = index, file_path = file_path, match_index = found_position }
                             table.insert(file_path_ranks, file_rank)
+                            break
                         end
+
+                        match_position = found_position + 1
+
+                        -- Complete the score when search sequence length is reached
+                        if i == #line then
+                            if found_position ~= nil then
+                                local file_rank = { index = index, file_path = file_path, match_index = found_position }
+                                table.insert(file_path_ranks, file_rank)
+                            end
+                        end
+
+                    end
+                end
+
+                -- sort the file ranks
+                table.sort(file_path_ranks, function(a, b)
+                    if a.match_index == b.match_index then
+                        return #a.file_path < #b.file_path
                     end
 
+                    local a_match_index = a.match_index or -1 * #a.file_path
+                    local b_match_index = b.match_index or -1 * #b.file_path
+                    return a_match_index < b_match_index
+                end)
+
+                -- Filter the matching scored file paths to a new display list
+                display_ranks  = {}
+                for i, path in ipairs(file_path_ranks) do
+                    if path.match_index ~= nil then
+                        table.insert(display_ranks, path.file_path)
+                    end
                 end
+
+                -- Update the Files selection to display the search results
+                vim.api.nvim_buf_set_lines(git_files_list_buffer_id, 0, -1, false, display_ranks)
+
+                -- Reset the pending file select to the first file
+                selected_file_index = 0
+                vim.api.nvim_buf_add_highlight(git_files_list_buffer_id, 0, "LineNr", selected_file_index, 0, -1)
+            else
+                -- Display the normal file list when the search term is empty
+                vim.api.nvim_buf_set_lines(git_files_list_buffer_id, 0, -1, false, file_list)
+                selected_file_index = 0
+                vim.api.nvim_buf_add_highlight(git_files_list_buffer_id, 0, "LineNr", selected_file_index, 0, -1)
             end
-
-            -- sort the file ranks
-            table.sort(file_path_ranks, function(a, b)
-                if a.match_index == b.match_index then
-                    return #a.file_path < #b.file_path
-                end
-
-                local a_match_index = a.match_index or -1 * #a.file_path
-                local b_match_index = b.match_index or -1 * #b.file_path
-                return a_match_index > b_match_index
-            end)
-
-            print("File path ranks: " .. line)
-            print("---------")
-            local display_ranks  = {}
-            for i, path in ipairs(file_path_ranks) do
-                if path.match_index ~= nil then
-                    table.insert(display_ranks, path.file_path)
-                end
-                -- print(i, path.file_path, path.match_index or -1 * #path.file_path)
-            end
-
-            -- reset the file selection buffer
-            vim.api.nvim_buf_set_lines(git_files_list_buffer_id, 0, -1, false, display_ranks)
-            -- TODO:
-            --       Hightlight the file list correctly
-            --       Reset the file list highlight to the first item when searching
-            --       When backspacing to an empty list. Show all the files again. Instead of nothing.
-            --       Experiment: Try highlighting the matching letters of the search
-
 
         end
     })
@@ -270,8 +271,12 @@ function git_files_window()
 
             -- Return to command mode from menu
             vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes('<Esc>', true, false, true), 'n', false)
+
             -- Open the selected file
             local selected_file_name = file_list[selected_file_index + 1]
+            if #display_ranks > 0 then
+                selected_file_name = display_ranks[selected_file_index + 1]
+            end
             vim.cmd("edit " .. vim.fn.fnameescape(selected_file_name))
     end
 
