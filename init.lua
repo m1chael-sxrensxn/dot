@@ -8,6 +8,7 @@ vim.opt.smartindent = true -- Smart indentation
 vim.opt.hlsearch = true -- Highlight search matches
 
 vim.g.mapleader = ' '
+local win_id_before_modal = vim.api.nvim_get_current_win()
 
 ---
 --- Create a centered floating window that is closed after 4 seconds
@@ -271,6 +272,9 @@ function git_files_window()
 
             -- Return to command mode from menu
             vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes('<Esc>', true, false, true), 'n', false)
+            if vim.api.nvim_win_is_valid(win_id_before_modal) then
+                vim.api.nvim_set_current_win(win_id_before_modal)
+            end
 
             -- Open the selected file
             local selected_file_name = file_list[selected_file_index + 1]
@@ -326,3 +330,136 @@ end
 vim.api.nvim_create_user_command('GitFiles', git_files_window, {})
 
 
+
+local main_menu_buffer_id = vim.api.nvim_create_buf(true, true)
+vim.api.nvim_buf_set_lines(main_menu_buffer_id, 0, 4, false, {"Files", "Windows", "Yesterday's Thoughts"})
+
+main_menu = function ()
+    win_id_before_modal = vim.api.nvim_get_current_win()
+
+    -- center horizontally
+    local editor_width = vim.api.nvim_get_option_value('columns', {})
+    local floating_window_width = 50
+    local starting_column = (editor_width - floating_window_width) / 2
+
+    -- center verticially
+    local editor_height = vim.api.nvim_get_option_value('lines', {})
+    local floating_window_height = 10
+    local starting_row = (editor_height - floating_window_height) / 2
+
+    -- open new centered window
+    local winid = vim.api.nvim_open_win(main_menu_buffer_id, true, {
+        width = floating_window_width,
+        height = floating_window_height,
+        relative = 'editor',
+        row = starting_row,
+        col = starting_column,
+        style = 'minimal',
+        border = 'solid',
+    })
+
+    -- Close the window with hitting escape
+    vim.api.nvim_buf_set_keymap(main_menu_buffer_id, 'n', '<Esc>', ':x <CR>', {noremap = true, silent = true})
+
+    -- close file list window when leaving the search window
+    vim.api.nvim_create_autocmd({ 'BufLeave', 'BufWinLeave' }, {
+        buffer = main_menu_buffer_id,
+        callback = function()
+            if vim.api.nvim_win_is_valid(winid) then
+                vim.api.nvim_win_close(winid, true)
+            end
+        end
+    })
+
+end
+
+local window_menu_buffer_id = vim.api.nvim_create_buf(true, true)
+vim.api.nvim_buf_set_lines(window_menu_buffer_id, 0, 4, false, {
+    "/  verticle",
+    "-  horizontal",
+    "d  delete",
+    "h  left",
+    "j  down",
+    "k  up",
+    "l  right",
+    "H  swap left",
+    "J  swap down",
+    "K  swap up",
+    "L  swap right",
+})
+
+function basic_window(buffer_id, previous_window_id)
+    -- center horizontally
+    local editor_width = vim.api.nvim_get_option_value('columns', {})
+    local floating_window_width = 50
+    local starting_column = (editor_width - floating_window_width) / 2
+
+    -- center verticially
+    local editor_height = vim.api.nvim_get_option_value('lines', {})
+    local floating_window_height = 10
+    local starting_row = (editor_height - floating_window_height) / 2
+
+    -- open new centered window
+    local winid = vim.api.nvim_open_win(buffer_id, true, {
+        width = floating_window_width,
+        height = floating_window_height,
+        relative = 'editor',
+        row = starting_row,
+        col = starting_column,
+        style = 'minimal',
+        border = 'solid',
+    })
+
+    -- Close the window with hitting escape
+    vim.api.nvim_buf_set_keymap(buffer_id, 'n', '<Esc>', ':x <CR>', {noremap = true, silent = true})
+
+    -- close file list window when leaving the search window
+    vim.api.nvim_create_autocmd({ 'BufLeave', 'BufWinLeave' }, {
+        buffer = buffer_id,
+        callback = function()
+            if vim.api.nvim_win_is_valid(winid) then
+                vim.api.nvim_win_close(winid, true)
+            end
+
+            if vim.api.nvim_win_is_valid(previous_window_id) then
+                vim.api.nvim_set_current_win(previous_window_id)
+            end
+        end
+    })
+
+end
+
+function window_menu()
+    -- local current_win_id = vim.api.nvim_get_current_win()
+    basic_window(window_menu_buffer_id, win_id_before_modal)
+end
+
+-- Main menu keymap
+vim.keymap.set("n", "<leader>", main_menu, { noremap = true, silent = true })
+vim.api.nvim_buf_set_keymap(main_menu_buffer_id, "n", "f", "",
+    {noremap = false, silent = true,
+    callback = git_files_window })
+vim.api.nvim_buf_set_keymap(main_menu_buffer_id, "n", "w", "",
+    {noremap = false, silent = true,
+    callback = window_menu })
+
+--
+-- Window menu keymap
+--
+
+-- window tiling
+vim.api.nvim_buf_set_keymap(window_menu_buffer_id, "n", "/", ":x<CR>:vs<CR>", {noremap = false, silent = true})
+vim.api.nvim_buf_set_keymap(window_menu_buffer_id, "n", "-", ":x<CR>:sp<CR>", {noremap = false, silent = true})
+vim.api.nvim_buf_set_keymap(window_menu_buffer_id, "n", "d", ":x<CR>:x<CR>", {noremap = false, silent = true})
+
+-- window focus
+vim.api.nvim_buf_set_keymap(window_menu_buffer_id, "n", "h", ":x<CR><C-w>h", {noremap = false, silent = true})
+vim.api.nvim_buf_set_keymap(window_menu_buffer_id, "n", "j", ":x<CR><C-w>j", {noremap = false, silent = true})
+vim.api.nvim_buf_set_keymap(window_menu_buffer_id, "n", "k", ":x<CR><C-w>k", {noremap = false, silent = true})
+vim.api.nvim_buf_set_keymap(window_menu_buffer_id, "n", "l", ":x<CR><C-w>l", {noremap = false, silent = true})
+
+-- window swap
+vim.api.nvim_buf_set_keymap(window_menu_buffer_id, "n", "H", ":x<CR><C-w>H", {noremap = false, silent = true})
+vim.api.nvim_buf_set_keymap(window_menu_buffer_id, "n", "J", ":x<CR><C-w>J", {noremap = false, silent = true})
+vim.api.nvim_buf_set_keymap(window_menu_buffer_id, "n", "K", ":x<CR><C-w>K", {noremap = false, silent = true})
+vim.api.nvim_buf_set_keymap(window_menu_buffer_id, "n", "L", ":x<CR><C-w>L", {noremap = false, silent = true})
