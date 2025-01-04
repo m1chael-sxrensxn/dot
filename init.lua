@@ -295,25 +295,37 @@ function git_files_window()
     })
 
     -- Move up and down the selection list
+    local move_file_select_down = function ()
+        if selected_file_index < #file_list - 1 then
+            vim.api.nvim_buf_clear_namespace(git_files_list_buffer_id, 0, selected_file_index, selected_file_index + 1)
+            selected_file_index = selected_file_index + 1
+            vim.api.nvim_buf_add_highlight(git_files_list_buffer_id, 0, "LineNr", selected_file_index, 0, -1)
+        end
+    end
+    local move_file_select_up = function ()
+        if selected_file_index > 0 then
+            vim.api.nvim_buf_clear_namespace(git_files_list_buffer_id, 0, selected_file_index, selected_file_index + 1)
+            selected_file_index = selected_file_index - 1
+            vim.api.nvim_buf_add_highlight(git_files_list_buffer_id, 0, "LineNr", selected_file_index, 0, -1)
+        end
+    end
+
     vim.api.nvim_buf_set_keymap(git_files_search_buffer_id, 'n', 'j', '', {
         noremap = false, silent = true,
-        callback = function ()
-            if selected_file_index < #file_list - 1 then
-                vim.api.nvim_buf_clear_namespace(git_files_list_buffer_id, 0, selected_file_index, selected_file_index + 1)
-                selected_file_index = selected_file_index + 1
-                vim.api.nvim_buf_add_highlight(git_files_list_buffer_id, 0, "LineNr", selected_file_index, 0, -1)
-            end
-        end
+        callback = move_file_select_down,
     })
+    vim.api.nvim_buf_set_keymap(git_files_search_buffer_id, 'i', '<Down>', '', {
+        noremap = false, silent = true,
+        callback = move_file_select_down,
+    })
+
     vim.api.nvim_buf_set_keymap(git_files_search_buffer_id, 'n', 'k', '', {
         noremap = false, silent = true,
-        callback = function ()
-            if selected_file_index > 0 then
-                vim.api.nvim_buf_clear_namespace(git_files_list_buffer_id, 0, selected_file_index, selected_file_index + 1)
-                selected_file_index = selected_file_index - 1
-                vim.api.nvim_buf_add_highlight(git_files_list_buffer_id, 0, "LineNr", selected_file_index, 0, -1)
-            end
-        end
+        callback = move_file_select_up,
+    })
+    vim.api.nvim_buf_set_keymap(git_files_search_buffer_id, 'i', '<Up>', '', {
+        noremap = false, silent = true,
+        callback = move_file_select_up,
     })
 
     -- Enter insert mode in the search window
@@ -332,7 +344,7 @@ vim.api.nvim_create_user_command('GitFiles', git_files_window, {})
 
 
 local main_menu_buffer_id = vim.api.nvim_create_buf(true, true)
-vim.api.nvim_buf_set_lines(main_menu_buffer_id, 0, 4, false, {"Files", "Windows", "Yesterday's Thoughts"})
+vim.api.nvim_buf_set_lines(main_menu_buffer_id, 0, 4, false, { "w window", "f file", "j journal"})
 
 main_menu = function ()
     win_id_before_modal = vim.api.nvim_get_current_win()
