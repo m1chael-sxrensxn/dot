@@ -456,32 +456,52 @@ local months = {
     "November",
     "December"
 }
+local date_string_format = "%Y.%m.%d"
 
-function open_today()
-    local todays_date = os.date("%Y.%m.%d")
-    local journal_buffer_id = journal_entries[todays_date]
-    if journal_buffer_id == nil then
-        journal_buffer_id = vim.api.nvim_create_buf(false, true)
-        journal_entries[todays_date] = journal_buffer_id
-
-        local date = os.date("*t")
-        local day_name = days_names[date.wday]
-        local month_name = months[date.month]
-        vim.api.nvim_buf_set_lines(journal_buffer_id, 0, 0, false, {
-            "# " .. day_name .. ", " .. month_name .. " " ..  date.day .. " " .. date.year,
-            "",
-            "## Tasks",
-            "",
-            "## Notes",
-        })
-    end
-
-    vim.api.nvim_set_current_win(win_id_before_modal)
-    vim.api.nvim_win_set_buf(win_id_before_modal, journal_buffer_id)
-    vim.api.nvim_buf_set_name(journal_buffer_id, todays_date..".md")
+function new_journal_entry_content(day_name, month_name, day_number, year_number)
+    return {
+        "# " .. day_name .. ", " .. month_name .. " " ..  day_number .. " " .. year_number,
+        "",
+        "",
+        "## Tasks",
+        "",
+        "",
+        "## Notes",
+    }
 end
 
-vim.api.nvim_buf_set_keymap(journal_menu_buffer_id, "n", "t", "", {noremap = false, silent = true, callback = open_today })
+function get_or_create_journal_entry(day_offset)
+    local time_offset = os.time() - day_offset * 86400
+    local file_name = os.date(date_string_format, time_offset)
+    local date_info = os.date("*t", time_offset)
+    local journal_buffer_id = journal_entries[file_name]
+    if journal_buffer_id == nil then
+        journal_buffer_id = vim.api.nvim_create_buf(false, true)
+        journal_entries[file_name] = journal_buffer_id
+
+        local day_name = days_names[date_info.wday]
+        local month_name = months[date_info.month]
+        vim.api.nvim_buf_set_lines(journal_buffer_id, 0, 0, false, new_journal_entry_content(day_name, month_name, date_info.day, date_info.year))
+        vim.api.nvim_buf_set_name(journal_buffer_id, file_name..".md")
+    end
+
+    return journal_buffer_id
+end
+
+function open_journal_entry(journal_buffer_id)
+    vim.api.nvim_set_current_win(win_id_before_modal)
+    vim.api.nvim_win_set_buf(win_id_before_modal, journal_buffer_id)
+end
+
+function open_today()
+    local journal_entry_id = get_or_create_journal_entry(0)
+    open_journal_entry(journal_entry_id)
+end
+
+function open_yesterday()
+    local journal_entry_id = get_or_create_journal_entry(1)
+    open_journal_entry(journal_entry_id)
+end
 
 function terminal_instance()
     vim.api.nvim_set_current_win(win_id_before_modal)
@@ -772,6 +792,13 @@ vim.api.nvim_buf_set_keymap(main_menu_buffer_id, "n", "t", "",
 vim.api.nvim_buf_set_keymap(main_menu_buffer_id, "n", "b", "",
     {noremap = false, silent = true,
     callback = buffer_search_list })
+
+--
+-- Journal menu keymap
+--
+
+vim.api.nvim_buf_set_keymap(journal_menu_buffer_id, "n", "t", "", {noremap = false, silent = true, callback = open_today })
+vim.api.nvim_buf_set_keymap(journal_menu_buffer_id, "n", "y", "", {noremap = false, silent = true, callback = open_yesterday })
 
 --
 -- Window menu keymap
