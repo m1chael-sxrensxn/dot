@@ -10,6 +10,16 @@ vim.opt.hlsearch = true -- Highlight search matches
 vim.g.mapleader = ' '
 local win_id_before_modal = vim.api.nvim_get_current_win()
 
+function return_to_win_id_before_main_menu()
+    return_to_win_id(win_id_before_modal)
+end
+
+function return_to_win_id(id)
+    if vim.api.nvim_win_is_valid(id) then
+        vim.api.nvim_set_current_win(id)
+    end
+end
+
 ---
 --- Create a centered floating window that is closed after 4 seconds
 ---
@@ -341,7 +351,7 @@ end
 
 vim.api.nvim_create_user_command('GitFiles', git_files_window, {})
 
-function basic_window(buffer_id, previous_window_id)
+function basic_window(buffer_id, callback)
     -- center horizontally
     local editor_width = vim.api.nvim_get_option_value('columns', {})
     local floating_window_width = 50
@@ -375,13 +385,278 @@ function basic_window(buffer_id, previous_window_id)
                 vim.api.nvim_win_close(winid, true)
             end
 
-            if vim.api.nvim_win_is_valid(previous_window_id) then
-                vim.api.nvim_set_current_win(previous_window_id)
+            if callback ~= nil then
+                callback()
             end
         end
     })
 
 end
+
+-- search_window will invoke the callback when an item is selected
+function search_window(title, list, callback)
+    ---
+    --- Config
+    ---
+    -- window heights
+    local search_window_height = 1
+    local title_window_height = 1
+    local list_window_height = 20
+
+    -- window widths
+    local search_window_width = 50
+    local title_window_width = 50
+    local list_window_width = 50
+
+    ---
+    --- Buffers
+    ---
+
+    -- list
+    local list_buffer_id = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_lines(list_buffer_id, 0, -1, false, list)
+
+    -- title buffer
+    local title_buffer_id = vim.api.nvim_create_buf(false, true)
+    local format_prefix = " "
+    local header_content = format_prefix:rep((title_window_width - title:len()) / 2) .. title
+    local file_list_header = { header_content }
+    vim.api.nvim_buf_set_lines(title_buffer_id, 0, -1, false, file_list_header)
+
+    -- empty buffer for search
+    local search_buffer_id = vim.api.nvim_create_buf(false, true)
+
+    --
+    -- Windows
+    --
+
+    local editor_width = vim.api.nvim_get_option_value('columns', {})
+    local editor_height = vim.api.nvim_get_option_value('lines', {})
+
+    -- title window
+    local title_starting_column = (editor_width - title_window_width) / 2
+    local title_starting_row = (editor_height - search_window_height - list_window_height - 7) / 2
+
+    -- search window
+    local search_starting_column = (editor_width - search_window_width) / 2
+    local search_starting_row = title_starting_row + 2
+
+    -- list window
+    local list_starting_column = (editor_width - list_window_width) / 2
+    local list_starting_row = search_starting_row + 3
+
+    -- open title window
+    local title_winid = vim.api.nvim_open_win(title_buffer_id, true, {
+        width = title_window_width,
+        height = title_window_height,
+        relative = 'editor',
+        row = title_starting_row,
+        col = title_starting_column,
+        style = 'minimal',
+        border = 'solid',
+    })
+
+    -- open files list window
+    local list_winid = vim.api.nvim_open_win(list_buffer_id, true, {
+        width = list_window_width,
+        height = list_window_height,
+        relative = 'editor',
+        row = list_starting_row,
+        col = list_starting_column,
+        style = 'minimal',
+        border = 'solid',
+    })
+
+    -- open search window
+    local search_winid = vim.api.nvim_open_win(search_buffer_id, true, {
+        width = search_window_width,
+        height = search_window_height,
+        relative = 'editor',
+        row = search_starting_row,
+        col = search_starting_column,
+        style = 'minimal',
+        border = 'solid',
+    })
+
+    -- close file list window when leaving the search window
+    vim.api.nvim_create_autocmd({ 'BufLeave', 'BufWinLeave' }, {
+        buffer = search_buffer_id,
+        callback = function()
+            if vim.api.nvim_win_is_valid(search_winid) then
+                vim.api.nvim_win_close(search_winid, true)
+            end
+            if vim.api.nvim_win_is_valid(title_winid) then
+                vim.api.nvim_win_close(title_winid, true)
+            end
+            if vim.api.nvim_win_is_valid(list_winid) then
+                vim.api.nvim_win_close(list_winid, true)
+            end
+        end
+    })
+    local selected_file_index = 0
+    local display_ranks = {}
+
+    vim.api.nvim_create_autocmd({ 'TextChangedI' }, {
+        buffer = search_buffer_id,
+        callback = function(args)
+            local line = vim.api.nvim_get_current_line()
+            -- local cursor_pos = vim.api.nvim_win_get_cursor(0)
+            -- local current_char = line:sub(cursor_pos[2], cursor_pos[2]) -- Get the last inserted character
+            -- print("Current line: " .. line .. " | Last inserted character: " .. current_char)
+
+            local file_path_ranks = {}
+
+            -- When there is a search term provided
+            if #line > 0 then
+                -- Score every file path on the full search term everytime the search term changes
+                -- TODO: this search could be improved to be incremental with the current_char
+                for index, file_path in ipairs(list) do
+                    local match_position = 1
+                    -- Score the file path by using the search term to sequence through the indices ensuring the characters are present in order
+                    for i = 1, #line do
+                        local searched_character = line:sub(i, i)
+                        local found_position = string.find(string.lower(file_path), string.lower(searched_character), match_position)
+
+                        -- Complete the score when the match becomes invalid
+                        if found_position == nil then
+                            local file_rank = { index = index, file_path = file_path, match_index = found_position }
+                            table.insert(file_path_ranks, file_rank)
+                            break
+                        end
+
+                        match_position = found_position + 1
+
+                        -- Complete the score when search sequence length is reached
+                        if i == #line then
+                            if found_position ~= nil then
+                                local file_rank = { index = index, file_path = file_path, match_index = found_position }
+                                table.insert(file_path_ranks, file_rank)
+                            end
+                        end
+
+                    end
+                end
+
+                -- sort the file ranks
+                table.sort(file_path_ranks, function(a, b)
+                    if a.match_index == b.match_index then
+                        return #a.file_path < #b.file_path
+                    end
+
+                    local a_match_index = a.match_index or -1 * #a.file_path
+                    local b_match_index = b.match_index or -1 * #b.file_path
+                    return a_match_index < b_match_index
+                end)
+
+                -- Filter the matching scored file paths to a new display list
+                display_ranks  = {}
+                for i, path in ipairs(file_path_ranks) do
+                    if path.match_index ~= nil then
+                        table.insert(display_ranks, path.file_path)
+                    end
+                end
+
+                -- Update the Files selection to display the search results
+                vim.api.nvim_buf_set_lines(list_buffer_id, 0, -1, false, display_ranks)
+
+                -- Reset the pending file select to the first file
+                selected_file_index = 0
+                vim.api.nvim_buf_add_highlight(list_buffer_id, 0, "LineNr", selected_file_index, 0, -1)
+            else
+                -- Display the normal file list when the search term is empty
+                vim.api.nvim_buf_set_lines(list_buffer_id, 0, -1, false, list)
+                selected_file_index = 0
+                vim.api.nvim_buf_add_highlight(list_buffer_id, 0, "LineNr", selected_file_index, 0, -1)
+            end
+
+        end
+    })
+
+    -- Close the search window when hitting escape
+    vim.api.nvim_buf_set_keymap(search_buffer_id, 'n', '<Esc>', ':x <CR>', {noremap = false, silent = true})
+    -- When enter is hit on the search bar
+    local exit_menu_and_open_file_callback = function ()
+            -- Close file menu
+            if vim.api.nvim_win_is_valid(search_winid) then
+                vim.api.nvim_win_close(search_winid, true)
+            end
+            if vim.api.nvim_win_is_valid(title_winid) then
+                vim.api.nvim_win_close(title_winid, true)
+            end
+            if vim.api.nvim_win_is_valid(list_winid) then
+                vim.api.nvim_win_close(list_winid, true)
+            end
+
+            -- Return to command mode from menu
+            vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes('<Esc>', true, false, true), 'n', false)
+            if vim.api.nvim_win_is_valid(win_id_before_modal) then
+                vim.api.nvim_set_current_win(win_id_before_modal)
+            end
+
+            -- Open the selected file
+            local selected_file_name = list[selected_file_index + 1]
+            if #display_ranks > 0 then
+                selected_file_name = display_ranks[selected_file_index + 1]
+            end
+
+            -- copied from git_files...
+            -- vim.cmd("edit " .. vim.fn.fnameescape(selected_file_name))
+            callback(selected_file_name)
+    end
+
+    -- 2 key mappings for enter on the search bar
+    vim.api.nvim_buf_set_keymap(search_buffer_id, 'n', '<CR>', '',
+        {noremap = false, silent = true,
+        callback = exit_menu_and_open_file_callback,
+    })
+    vim.api.nvim_buf_set_keymap(search_buffer_id, 'i', '<CR>', '',
+        {noremap = false, silent = true,
+        callback = exit_menu_and_open_file_callback,
+    })
+
+    -- Move up and down the selection list
+    local move_file_select_down = function ()
+        if selected_file_index < #list - 1 then
+            vim.api.nvim_buf_clear_namespace(list_buffer_id, 0, selected_file_index, selected_file_index + 1)
+            selected_file_index = selected_file_index + 1
+            vim.api.nvim_buf_add_highlight(list_buffer_id, 0, "LineNr", selected_file_index, 0, -1)
+        end
+    end
+    local move_file_select_up = function ()
+        if selected_file_index > 0 then
+            vim.api.nvim_buf_clear_namespace(list_buffer_id, 0, selected_file_index, selected_file_index + 1)
+            selected_file_index = selected_file_index - 1
+            vim.api.nvim_buf_add_highlight(list_buffer_id, 0, "LineNr", selected_file_index, 0, -1)
+        end
+    end
+
+    vim.api.nvim_buf_set_keymap(search_buffer_id, 'n', 'j', '', {
+        noremap = false, silent = true,
+        callback = move_file_select_down,
+    })
+    vim.api.nvim_buf_set_keymap(search_buffer_id, 'i', '<Down>', '', {
+        noremap = false, silent = true,
+        callback = move_file_select_down,
+    })
+
+    vim.api.nvim_buf_set_keymap(search_buffer_id, 'n', 'k', '', {
+        noremap = false, silent = true,
+        callback = move_file_select_up,
+    })
+    vim.api.nvim_buf_set_keymap(search_buffer_id, 'i', '<Up>', '', {
+        noremap = false, silent = true,
+        callback = move_file_select_up,
+    })
+
+    -- Enter insert mode in the search window
+    vim.api.nvim_command('startinsert')
+
+    -- Highlight the first line of the list buffer
+    -- TODO: I don't think this is the correct theming API
+    -- vim.api.nvim_set_hl(0, "VisualHighlight", { fg = "#ffffff", bg = "#000000" })
+    vim.api.nvim_buf_add_highlight(list_buffer_id, 0, "LineNr", selected_file_index, 0, -1)
+end
+
 
 local main_menu_buffer_id = vim.api.nvim_create_buf(false, true)
 vim.api.nvim_buf_set_lines(main_menu_buffer_id, 0, 4, false, {
@@ -396,7 +671,7 @@ vim.api.nvim_buf_set_lines(main_menu_buffer_id, 0, 4, false, {
 main_menu = function ()
     win_id_before_modal = vim.api.nvim_get_current_win()
 
-    basic_window(main_menu_buffer_id, -1)
+    basic_window(main_menu_buffer_id)
 end
 
 local window_menu_buffer_id = vim.api.nvim_create_buf(false, true)
@@ -411,7 +686,7 @@ vim.api.nvim_buf_set_lines(window_menu_buffer_id, 0, 4, false, {
 
 
 function window_menu()
-    basic_window(window_menu_buffer_id, win_id_before_modal)
+    basic_window(window_menu_buffer_id, return_to_win_id_before_main_menu)
 end
 
 --
@@ -424,12 +699,12 @@ vim.api.nvim_buf_set_lines(journal_menu_buffer_id, 0, 4, false, {
     "t          today",
     "y          yesterday",
     "f          last friday",
-    "s          search",
-    "d          select date"
+    "s          select entry",
+    "/          search",
 })
 
 function journal_menu()
-    basic_window(journal_menu_buffer_id, win_id_before_modal)
+    basic_window(journal_menu_buffer_id)
 end
 
 local journal_entries = {}
@@ -508,6 +783,28 @@ function open_last_friday()
     local last_friday_offset = math.abs(6 - today_info.wday)
     local journal_entry_id = get_or_create_journal_entry(last_friday_offset)
     open_journal_entry(journal_entry_id)
+end
+
+function search_select_entry_name()
+    local entry_names = {}
+    for name, buffer_id in pairs(journal_entries) do
+        print(name, buffer_id)
+        table.insert(entry_names, name)
+    end
+
+    local callback = function(entry_name)
+        local id = journal_entries[entry_name]
+        if id ~= nil then
+            open_journal_entry(id)
+        end
+    end
+
+    -- if there are no entry create today as an entry as a default behaviour
+    if #entry_names > 0 then
+        search_window("Journal", entry_names, callback)
+    else
+        open_today()
+    end
 end
 
 function terminal_instance()
@@ -807,6 +1104,7 @@ vim.api.nvim_buf_set_keymap(main_menu_buffer_id, "n", "b", "",
 vim.api.nvim_buf_set_keymap(journal_menu_buffer_id, "n", "t", "", {noremap = false, silent = true, callback = open_today })
 vim.api.nvim_buf_set_keymap(journal_menu_buffer_id, "n", "y", "", {noremap = false, silent = true, callback = open_yesterday })
 vim.api.nvim_buf_set_keymap(journal_menu_buffer_id, "n", "f", "", {noremap = false, silent = true, callback = open_last_friday })
+vim.api.nvim_buf_set_keymap(journal_menu_buffer_id, "n", "s", "", {noremap = false, silent = true, callback = search_select_entry_name })
 
 --
 -- Window menu keymap
