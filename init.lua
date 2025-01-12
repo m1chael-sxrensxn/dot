@@ -417,6 +417,7 @@ local journal_menu_buffer_id = vim.api.nvim_create_buf(false, true)
 vim.api.nvim_buf_set_lines(journal_menu_buffer_id, 0, 4, false, {
     "",
     "t          today",
+    "T          tomorrow",
     "y          yesterday",
     "f          last friday",
     "s          select entry",
@@ -490,6 +491,11 @@ end
 
 function open_today()
     local journal_entry_id = get_or_create_journal_entry(0)
+    open_journal_entry(journal_entry_id)
+end
+
+function open_tomorrow()
+    local journal_entry_id = get_or_create_journal_entry(-1)
     open_journal_entry(journal_entry_id)
 end
 
@@ -595,6 +601,7 @@ vim.api.nvim_buf_set_keymap(main_menu_buffer_id, "n", "b", "",
 --
 
 vim.api.nvim_buf_set_keymap(journal_menu_buffer_id, "n", "t", "", {noremap = false, silent = true, callback = open_today })
+vim.api.nvim_buf_set_keymap(journal_menu_buffer_id, "n", "T", "", {noremap = false, silent = true, callback = open_tomorrow })
 vim.api.nvim_buf_set_keymap(journal_menu_buffer_id, "n", "y", "", {noremap = false, silent = true, callback = open_yesterday })
 vim.api.nvim_buf_set_keymap(journal_menu_buffer_id, "n", "f", "", {noremap = false, silent = true, callback = open_last_friday })
 vim.api.nvim_buf_set_keymap(journal_menu_buffer_id, "n", "s", "", {noremap = false, silent = true, callback = search_select_entry_name })
