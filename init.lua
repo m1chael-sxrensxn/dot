@@ -462,11 +462,11 @@ function new_journal_entry_content(day_name, month_name, day_number, year_number
     return {
         "# " .. day_name .. ", " .. month_name .. " " ..  day_number .. " " .. year_number,
         "",
-        "",
         "## Tasks",
         "",
         "",
         "## Notes",
+        "",
     }
 end
 
@@ -500,6 +500,13 @@ end
 
 function open_yesterday()
     local journal_entry_id = get_or_create_journal_entry(1)
+    open_journal_entry(journal_entry_id)
+end
+
+function open_last_friday()
+    local today_info = os.date("*t")
+    local last_friday_offset = math.abs(6 - today_info.wday)
+    local journal_entry_id = get_or_create_journal_entry(last_friday_offset)
     open_journal_entry(journal_entry_id)
 end
 
@@ -799,6 +806,7 @@ vim.api.nvim_buf_set_keymap(main_menu_buffer_id, "n", "b", "",
 
 vim.api.nvim_buf_set_keymap(journal_menu_buffer_id, "n", "t", "", {noremap = false, silent = true, callback = open_today })
 vim.api.nvim_buf_set_keymap(journal_menu_buffer_id, "n", "y", "", {noremap = false, silent = true, callback = open_yesterday })
+vim.api.nvim_buf_set_keymap(journal_menu_buffer_id, "n", "f", "", {noremap = false, silent = true, callback = open_last_friday })
 
 --
 -- Window menu keymap
