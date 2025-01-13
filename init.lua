@@ -385,7 +385,8 @@ vim.api.nvim_buf_set_lines(main_menu_buffer_id, 0, 4, false, {
     "b          buffer",
     "t          terminal",
     "f          file",
-    "j          journal"
+    "j          journal",
+    "q          quit",
 })
 
 main_menu = function ()
@@ -412,6 +413,9 @@ end
 --
 -- Journal
 --
+
+local journal_dir = "~/yesterdays_thoughts/"
+local journal_file_ext = ".md"
 
 local journal_menu_buffer_id = vim.api.nvim_create_buf(false, true)
 vim.api.nvim_buf_set_lines(journal_menu_buffer_id, 0, 4, false, {
@@ -470,45 +474,60 @@ function get_or_create_journal_entry(day_offset)
     local time_offset = os.time() - day_offset * 86400
     local file_name = os.date(date_string_format, time_offset)
     local date_info = os.date("*t", time_offset)
-    local journal_buffer_id = journal_entries[file_name]
+    local file_path = journal_dir..file_name..journal_file_ext
+    local journal_buffer_id = journal_entries[file_path]
     if journal_buffer_id == nil then
-        journal_buffer_id = vim.api.nvim_create_buf(false, true)
+        journal_buffer_id = vim.api.nvim_create_buf(false, false)
         journal_entries[file_name] = journal_buffer_id
 
         local day_name = days_names[date_info.wday]
         local month_name = months[date_info.month]
         vim.api.nvim_buf_set_lines(journal_buffer_id, 0, 0, false, new_journal_entry_content(day_name, month_name, date_info.day, date_info.year))
-        vim.api.nvim_buf_set_name(journal_buffer_id, file_name..".md")
+        vim.api.nvim_buf_set_name(journal_buffer_id, file_path)
+
+        -- Change the :w command to create or overwrite the file... ??? Can I do it?
+        vim.api.nvim_create_autocmd("BufWriteCmd", {
+            buffer = journal_buffer_id,
+            callback = function(event)
+                local file, err = io.open(vim.fn.expand(file_path), "w+")
+                if file then
+                    -- Your custom write logic here
+                    local lines = vim.api.nvim_buf_get_lines(event.buf, 0, -1, false)
+                    local content = table.concat(lines, "\n")
+                    file:write(content)
+                    file:close()
+
+                    vim.notify("\""..file_path.."\" "..#lines.."L, "..#content.."B written", vim.log.levels.INFO)
+                else
+                    vim.notify("Error writing to file: "..err, vim.log.levels.ERROR)
+                end
+            end,
+        })
     end
 
-    return journal_buffer_id
-end
+    -- TODO: I was planning on syncing this buffer to the cloud
+    --      - what is the modified content API? I was wondering if I could use a cli tool to upload a journal to the cloud. Maybe in Rust.
 
-function open_journal_entry(journal_buffer_id)
     vim.api.nvim_set_current_win(win_id_before_modal)
     vim.api.nvim_win_set_buf(win_id_before_modal, journal_buffer_id)
 end
 
 function open_today()
     local journal_entry_id = get_or_create_journal_entry(0)
-    open_journal_entry(journal_entry_id)
 end
 
 function open_tomorrow()
     local journal_entry_id = get_or_create_journal_entry(-1)
-    open_journal_entry(journal_entry_id)
 end
 
 function open_yesterday()
     local journal_entry_id = get_or_create_journal_entry(1)
-    open_journal_entry(journal_entry_id)
 end
 
 function open_last_friday()
     local today_info = os.date("*t")
     local last_friday_offset = math.abs(6 - today_info.wday)
     local journal_entry_id = get_or_create_journal_entry(last_friday_offset)
-    open_journal_entry(journal_entry_id)
 end
 
 function search_select_entry_name()
@@ -595,6 +614,8 @@ vim.api.nvim_buf_set_keymap(main_menu_buffer_id, "n", "t", "",
 vim.api.nvim_buf_set_keymap(main_menu_buffer_id, "n", "b", "",
     {noremap = false, silent = true,
     callback = buffer_search_list })
+vim.api.nvim_buf_set_keymap(main_menu_buffer_id, "n", "q", ":qa!<CR>",
+    {noremap = false, silent = true})
 
 --
 -- Journal menu keymap
