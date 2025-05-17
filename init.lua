@@ -386,7 +386,7 @@ vim.api.nvim_buf_set_lines(main_menu_buffer_id, 0, 4, false, {
     "j          journal",
     "t          terminal",
     "w          window",
-    "x          exit",
+    "q          quit",
 })
 
 main_menu = function ()
@@ -486,9 +486,6 @@ function get_or_create_journal_entry(day_offset)
         vim.api.nvim_buf_set_lines(journal_buffer_id, 0, 0, false, initial_content)
         vim.api.nvim_buf_set_name(journal_buffer_id, file_path)
 
-        local previous_entry = initial_content
-        local entry_length = #table.concat(previous_entry, "\n")
-
         -- Change the :w command to create or overwrite the file... ??? Can I do it?
         vim.api.nvim_create_autocmd("BufWriteCmd", {
             buffer = journal_buffer_id,
@@ -509,18 +506,20 @@ function get_or_create_journal_entry(day_offset)
         })
 
 
+        -- Have the initial content of the journal entry
+        local previous_entry = vim.api.nvim_buf_get_lines(journal_buffer_id, 0, -1, false)
+        local entry_length = #table.concat(previous_entry, "\n")
+
         vim.api.nvim_buf_attach(journal_buffer_id, false, {
             on_bytes = function(event_name, buffer_handle, changed_tick,
                 start_row, start_column, byte_offset,
                 old_end_row, old_end_column, old_end_byte_length,
                 new_end_row, new_end_column, new_end_byte_length)
+
                 print("------")
+                print("event_name =", event_name)
 
-                -- print(event_name, buffer_handle, changed_tick,
-                -- start_row, start_column, byte_offset,
-                -- old_end_row, old_end_column, old_end_byte_length,
-                -- new_end_row, new_end_column, new_end_byte_length)
-
+                print("changed_tick =", changed_tick)
                 print("start_row =", start_row)
                 print("start_column =", start_column)
                 print("byte_offset =", byte_offset)
@@ -539,263 +538,76 @@ function get_or_create_journal_entry(day_offset)
                 local byte_difference = new_end_byte_length - old_end_byte_length
                 print("byte_difference =", byte_difference)
 
-                -- cusor_location is the byte index after the change
-                local cursor_location = byte_offset
-
-
                 -- TODO: known change types to handle
                 --
-                -- - [ ] delete
-                -- - [ ] text
+                -- - [x] delete
+                -- - [x] text
                 -- - [ ] replace
 
-                -- TODO: Figure out if I can do all of these operations in 2 main loops
-                --
-                --      - [ ] previous
-                --      - [ ] current
-                --
+                -- if byte_difference < 0 then
+                if old_end_byte_length > 0 then
+                    local previous_data = {}
+                    for i = start_row, start_row + old_end_row do
+                        print("i =", i)
+                        local previous_line = previous_entry[1 + i]
+                        -- trim the first line
+                        if i == start_row then
+                            previous_line = string.sub(previous_line, start_column, -1)
+                        end
 
-                -- -- find replacement data
-                -- if byte_difference == 0 then
+                        -- strip the last line
+                        if i == start_row + old_end_row and old_end_column ~= 0 then
+                            previous_line = string.sub(previous_line, 0, old_end_column + 1)
+                        end
 
-                local buffer_lines = vim.api.nvim_buf_get_lines(buffer_handle, 0, -1, false)
-                -- previous_entry
-
-                local rows = {}
-                for i=start_row,start_row+line_count_difference do
-                    table.insert(rows, i)
-
-                    -- if i == start_row then
-                    --     for j=start_column,new_end_column do
-                    --         print(buffer_lines[i][j])
-                    --     end
-                    -- else
-                    --     local line = buffer_lines[i]
-                    --     for j=1,#line do
-                    --         print(line[j])
-                    --     end
-                    -- end
-
-                end
-                print("row count =", #rows)
-
-
-                -- This currently can pick up newly added lines from paste
-                print("change row count: ", #rows)
-                -- Get the new insert data from the event
-                for x, row_index in pairs(rows) do
-                    print("...")
-                    print("row =", row_index)
-                    print("last row =", #buffer_lines)
-                    print("line #", row_index)
-
-                    if row_index == #buffer_lines then
-                        break
+                        table.insert(previous_data, previous_line)
                     end
-
-                    local current_line = buffer_lines[row_index+1]
-
-                    local start_column_index = 0
-                    if i == start_row then
-                        start_column_index = start_column
-                    end
-
-                    local end_column_index = #current_line
-                    if i == new_end_row then
-                        end_column_index = new_end_column
-                    end
-
-                    local data = string.sub(current_line, start_column_index, end_column_index)
-                    print("data =", data)
-
+                    local deleted_data = table.concat(previous_data, "\n")
+                    print("** deleted_data =", deleted_data)
                 end
 
+                if new_end_byte_length > 0 then
+                    -- get all rows for the new data
+                    local row_change_count = new_end_row
+                    if new_end_row == 0 then
+                         row_change_count = 1
+                    end
+                    -- I'm not handling this correctly, because when a new end row is a delete
+                    local new_data_lines = vim.api.nvim_buf_get_lines(buffer_handle, start_row, start_row + row_change_count, true)
+                    -- trim the first line.
+                    new_data_lines[1] = string.sub(new_data_lines[1], start_column + 1, -1)
+                    -- strip the last line even if it is the first line.
+                    if new_end_column ~= 0 then
+                        new_data_lines[#new_data_lines] = string.sub(new_data_lines[#new_data_lines], 0, new_end_column + 1)
+                    end
+                    local new_data = table.concat(new_data_lines, "\n")
+                    print("** new_data =", new_data)
+                end
 
-                -- end
+                -- -- cusor_location is the byte index after the change
+                -- local cursor_location = byte_offset
 
+                -- update the old version of the entry for diffing after processing the changes
+                previous_entry = vim.api.nvim_buf_get_lines(buffer_handle, 0, -1, false)
+            end,
+        })
 
-
+        -- TODO: I'm not certain if I want to use this API or not
+        vim.api.nvim_create_autocmd({"TextChanged", "TextChangedI"}, {
+            buffer = journal_buffer_id,
+            callback = function(event)
+                print("------")
                 -- event information
-                -- for k, v in pairs(event) do
-                --     print(k.." =", v)
-                -- end
-
-            end,
-        })
-
-        -- TODO: I think it is InsertCharPre || TextChangedI TextChanged
-
-        local preInsertTick = -1
-        local preInsertChar = ""
-        vim.api.nvim_create_autocmd("InsertCharPre", {
-            buffer = journal_buffer_id,
-            callback = function(event)
-                print("------")
-                print("event =", "InsertCharPre")
-                preInsertChar = vim.v.char
-                print("char =", preInsertChar)
-
-                -- Get the change information (more advanced)
-                preInsertTick = vim.api.nvim_buf_get_changedtick(event.buf)
-                print("changed_tick =", preInsertTick)
-            end
-        })
-
-        revision_history_counter = 1
-        vim.api.nvim_create_autocmd({"TextChangedI", "TextChanged"}, {
-            buffer = journal_buffer_id,
-            callback = function(event)
-                print("------")
-
-                -- -- event information
-                -- for k, v in pairs(event) do
-                --     print(k.." =", v)
-                -- end
-
-                print("event =", event.event)
-                print("file =", event.file)
-
-                -- TODO: I believe I would need this to match what I have in javascript. I'm going to experiment with a different API first.
-                -- -- I might need to think of a new API based on vim for my server... I think it should be based on vim because I gave a speech about file system compatibility compared to the web browser which i think is optimised for the renderer.
-                -- local row, col = vim.api.nvim_win_get_cursor(vim.api.nvim_get_current_win())
-                -- print("row", row)
-                -- print("col", col)
-
-                local buf = event.buf
-                local buffer_lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-
-                -- Get the change information (more advanced)
-                local changed_tick = vim.api.nvim_buf_get_changedtick(event.buf)
-                print("changed_tick =", changed_tick)
-                revision_history_counter = revision_history_counter + 1
-                print("revision_history =", revision_history_counter)
-
-                -- Handle single character inserts
-                if event.event == "TextChangedI" and changed_tick - 1 == preInsertTick then
-                    print("char =", preInsertChar)
-                    return -- insert character event
+                for k, v in pairs(event) do
+                    print(k.." =", v)
                 end
 
-                -- TODO: delete line
-                -- TODO: [research this to see if the diffing is already done](https://neovim.io/doc/user/api.html#api-buffer-updates)
-                -- I think I'm checking if I can use `nvim_buf_attach`
-
-
-                local content = table.concat(buffer_lines, "\n")
-
-                -- content size and changes
-                local difference = #content - entry_length
-                print("difference =", difference)
-                entry_length = #content
-                print("entry_length =", entry_length)
-                -- log data
-                -- iterate through the lines on both the entry and previous entry
-                -- compare the line lengths to check for differences
-                --      TODO: consider the other checks to detect differences
-                --      TODO: figure out if the iteration should be based on the previous or current entries line count. For organizational purposes
-
-
-                print("*****undolist*****")
-                local before_undolist = vim.fn.execute("undolist")
-                print(before_undolist)
-
-                -- all of it. plz. For %s/foo/bar/g
-                --
-                -- current_entry = buffer_lines
-                --
-                -- previous_entry
-                --
-                -- I've been having a difficult time thinking through what I'm doing... Mind control isn't gone yet.
-                -- I'm talking a lot
-                --
-                --
-                -- I need to distingish between the different types of changes before processing...
-                --
-                -- Categories I can think of...
-                --
-                -- - [ ] replacement
-                -- - [ ] insertion
-                -- - [ ] deletion
-                --
-                -- I think all of these can happen with the number of lines or within existing lines
-                -- There is a casade affect for some of these situations I haven't accounted for.
-                -- What situations can I account for? This kind of seems like something I named span parsing
-                -- I'm wondering what phases I could do this in to account for changes that span multiple lines.
-                --
-                -- I'm guessing that the first step is to categorize which type of change it is... I think this type of event can be <EnterInserMode>...</ExitInsertMode> type of content changes which could involve all 3 categories of changes.
-                --
-                --
-                -- I got lost in that last statement and I don't think its accurate.
-                --
-
-
-                -- Here are some examples I think I could implement to start thinking about how to organize this
-                --
-                --
-                -- - [x] insert single character
-                -- - [ ] delete word
-                -- - [ ] delete line
-                -- - [ ] paste line
-                -- - [ ] upper case span
-                --
-                --
-
-
-
-                -- print("*******diff*******")
-                -- local current_entry_line_count = #buffer_lines
-                -- local previous_entry_line_count = #previous_entry
-                -- local smaller_line_count = math.min(#buffer_lines, #previous_entry)
-
-                -- -- going through each line of the entry
-                -- for i=1,smaller_line_count do
-                --     print("line", i)
-                --     local current_line = buffer_lines[i]
-                --     local previous_line = previous_entry[i]
-                --     local shorter_line_length = math.min(#current_line, #previous_line)
-                --     -- local deletion = false
-                --     -- local deletion = #current_line < #previous_line
-
-                --     local line_length_difference = math.abs(#current_line, #previous_line)
-
-
-                --     print("__compare_start__")
-                --     print(current_line)
-                --     print(previous_line)
-                --     print("__compare_end__")
-
-
-                --     -- compare both lines
-                --     for j=1,shorter_line_length do
-                --         local current_char = current_line:sub(j, j)
-                --         local previous_char = previous_line:sub(j, j)
-                --         print(current_char, previous_char)
-
-                --         if current_char ~= previous_char then
-                --             print("i=",i,"j=",j,"current_char=",current_char,"previous_char=",previous_char)
-                --         end
-                --     end
-                -- end
-
-                -- if line_length_difference > 0 then
-                --     -- addition
-                --     if #current_line == shorter_line_length + line_length_difference then
-                --         --for j=shorter_line_length, shorter_line_length+line_length_difference
-                --         local remainder = current_line:sub(shorter_line_length, #current_line)
-                --     else -- deletion
-                --         local remainder = previous_line:sub(shorter_line_length, #previous_line)
-                --     end
-                -- end
-
-                -- previous_entry = buffer_lines
-            end,
+            end
         })
 
     end
 
-    -- TODO: I was planning on syncing this buffer to the cloud
-    --      - what is the modified content API? I was wondering if I could use a cli tool to upload a journal to the cloud. Maybe in Rust.
-
+    -- Open set journal entry to the active buffer
     vim.api.nvim_set_current_win(win_id_before_modal)
     vim.api.nvim_win_set_buf(win_id_before_modal, journal_buffer_id)
 end
@@ -902,10 +714,10 @@ vim.api.nvim_buf_set_keymap(main_menu_buffer_id, "n", "t", "",
 vim.api.nvim_buf_set_keymap(main_menu_buffer_id, "n", "b", "",
     {noremap = false, silent = true,
     callback = buffer_search_list })
--- vim.api.nvim_buf_set_keymap(main_menu_buffer_id, "n", "q", ":qa!<CR>",
---    {noremap = false, silent = true})
-vim.api.nvim_buf_set_keymap(main_menu_buffer_id, "n", "x", ":qa!<CR>",
-    {noremap = false, silent = true})
+vim.api.nvim_buf_set_keymap(main_menu_buffer_id, "n", "q", ":qa!<CR>",
+   {noremap = false, silent = true})
+-- vim.api.nvim_buf_set_keymap(main_menu_buffer_id, "n", "x", ":qa!<CR>",
+--     {noremap = false, silent = true})
 
 --
 -- Journal menu keymap
